@@ -61,10 +61,10 @@ g_bg = epsp_bg/(VEr-VL)/tauS    # epsp ~= g*tauS*(VEr-VL)
 approx_g_factor = 0.75          # a factor to partially rectify above approx
 g_bg = g_bg/approx_g_factor
 
-duration_settle = 50*ms         # network settles to bgnd activity after kick
+duration_settle = 1000*ms       # network settles to bgnd activity after kick
 
 # simulation constants
-tstep = 0.1*ms                  # time step of simulation
+tstep = 0.01*ms                 # time step of simulation
 runtime = duration_bg+duration_settle
 
 # ###########################################
@@ -108,7 +108,7 @@ SynsII = Synapses(NrnsI, NrnsI, 'g : second**-1', on_pre='gI += g') # I to E
 SynsII.delay = '(rand()-0.5)*2*ms + syndelayI'
 
 # excitatory to excitatory
-connEE = where(uniform(size=(NE,NE))>=cE)
+connEE = where(uniform(size=(NE,NE))<cE)
                                         # keep only cE prob of connections
 SynsEE.connect(i=connEE[0],j=connEE[1])
 
@@ -201,13 +201,14 @@ print "plotted spike raster"
 ratefig = figure()
 rateax = ratefig.add_subplot(111)
 rateax.plot(rates.t/ms, 
-    rates.smooth_rate(window='flat', width=5*ms)/Hz,
-    '.-b',label="exc nrns' rate")
+    rates.smooth_rate(window='flat', width=20*ms)/Hz,
+    '-b',label="exc nrns' rate")
 rateax.plot(ratesI.t/ms, 
-    ratesI.smooth_rate(window='flat', width=5*ms)/Hz,
-    '.-r',label="inh nrns' rate")
+    ratesI.smooth_rate(window='flat', width=20*ms)/Hz,
+    '-r',label="inh nrns' rate")
 rateax.set_ylabel("rate (Hz)")
 rateax.set_xlabel("time (ms)")
+rateax.set_title('rates of exc (b) / inh (r) neurons')
 legend()
 
 print "plotted rates"
@@ -217,7 +218,7 @@ vfig = figure()
 v_ax = vfig.add_subplot(111)
 v_ax.set_ylabel('voltage (mV)')
 v_ax.set_xlabel('time (ms)')
-v_ax.set_title('Exc on (b), Exc on incompl (c) Inh (r)')
+v_ax.set_title('some exc (b), inh (r) membrane potentials')
 for idx in range(5):
     v_ax.plot(Mu.t/ms, Mu.u[idx]/mV,'-,b')
     v_ax.plot(Mu.t/ms, MuInh.u[idx]/mV,'-,r')
