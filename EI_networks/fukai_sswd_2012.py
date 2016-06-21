@@ -28,6 +28,7 @@ syndelayE = 2.*ms               # exc synaptic delay
 syndelayI = 1.*ms               # inh synaptic delay
 Vth = -50.*mV                   # C threshold
 VL = -70.*mV                    # V leak
+Vreset = -60.*mV                # V reset
 VEr = 0.*mV                     # exc syn reversal potential
 VIr = -80.*mV                   # inh syn reversal potential
 Va = 0.1*mV                     # threshold for syn transmission failure
@@ -38,8 +39,8 @@ NI = 2000                       # number of inh neurons
 Ntot = NE+NI                    # total number of neurons
 cE = 0.1                        # exc connection probability
 cI = 0.5                        # inh connection probability
-GIE = 0.017*ms**-1              # E to I
-GEI = 0.0018*ms**-1             # I to E
+GIE = 0.018*ms**-1              # E to I
+GEI = 0.002*ms**-1              # I to E
 GII = 0.0025*ms**-1             # I to I
 lognEEsigma = 1.0               # E to E epsp (mV), std dev of lognormal
 lognEEmean = lognEEsigma**2+log(0.2)
@@ -66,6 +67,13 @@ duration_settle = 50*ms         # network settles to bgnd activity after kick
 tstep = 0.1*ms                  # time step of simulation
 runtime = duration_bg+duration_settle
 
+# ###########################################
+# Brian2 model
+# ###########################################
+
+###
+# neuronal populations
+###
 model_eqns = """
     taum : second
     u0 : volt
@@ -78,7 +86,7 @@ threshold_eqns = "u>=Vth"
 # One E+I neuron group is faster to simulate than two separate E & I
 Nrns = NeuronGroup(Ntot, model_eqns, method='euler',\
                     threshold=threshold_eqns,\
-                    reset="u=VL",refractory=taurefr)
+                    reset="u=Vreset",refractory=taurefr)
 Nrns.u = VL                     # initially, all neurons are as if just reset
 NrnsE = Nrns[:NE]
 NrnsI = Nrns[NE:]
@@ -86,7 +94,7 @@ NrnsE.taum = tauE
 NrnsI.taum = tauI
 
 ###
-# brian2 code to make, connect, weight synapses
+# make, connect, weight synapses
 ###
 SynsEE = Synapses(NrnsE, NrnsE, 'g : second**-1', \
                         on_pre='gE += g*(rand()>gfail/(gfail+g))') # E to E
@@ -138,7 +146,10 @@ connII = where(uniform(size=(NI,NI))<cI)
 SynsII.connect(i=connII[0],j=connII[1])
 SynsII.g = GII
 
-# bug in PopulationRateMonitor(NrnsI) with NrnsI = NeuronGroup[N:]
+###
+# probes to record
+###
+# possible bug in PopulationRateMonitor(NrnsI) with NrnsI = NeuronGroup[N:]
 # gives higher firing rate than actual?!
 ratesI = PopulationRateMonitor(NrnsI)
 MuInh = StateMonitor(Nrns, 'u', record=range(NE,NE+5))
@@ -147,7 +158,9 @@ rates = PopulationRateMonitor(NrnsE)
 spikes = SpikeMonitor(Nrns)
 Mu = StateMonitor(Nrns, 'u', record=range(5))
 
+###
 # Poisson input
+###
 NrnsIn = NeuronGroup(Ntot, 'rate : Hz', threshold='rand()<rate*dt')
 SynsEIn = Synapses(NrnsIn, Nrns, '', on_pre='gE += g_bg') # In to E
 SynsEIn.connect(condition='i==j')
@@ -172,27 +185,26 @@ if simulate and stand_alone:
 if not simulate: sys.exit()
 
 # ###########################################
-# Analysis & plotting
+# Plotting
 # ###########################################
 
 # spike raster
 figure()
-plot(spikes.t/second, spikes.i, '.')
+plot(spikes.t/ms, spikes.i, '.')
+xlabel('time (ms)')
+ylabel('neuron #')
+title('Spike raster (#>10000 are inh)')
 
 print "plotted spike raster"
 
-# overall rate
+# population rate
 ratefig = figure()
 rateax = ratefig.add_subplot(111)
-binunits = 100
-bindt = tstep*binunits
-bins = range(int(runtime/bindt))
-Nbins = len(bins)
-rateax.plot([rates.t[i*binunits]/ms+bindt/2.0/ms for i in bins],\
-    [sum(rates.rate[i*binunits:(i+1)*binunits]/Hz)/float(binunits) for i in bins],
+rateax.plot(rates.t/ms, 
+    rates.smooth_rate(window='flat', width=5*ms)/Hz,
     '.-b',label="exc nrns' rate")
-rateax.plot([rates.t[i*binunits]/ms+bindt/2.0/ms for i in bins],\
-    [sum(rates.rate[i*binunits:(i+1)*binunits]/Hz)/float(binunits) for i in bins],
+rateax.plot(ratesI.t/ms, 
+    ratesI.smooth_rate(window='flat', width=5*ms)/Hz,
     '.-r',label="inh nrns' rate")
 rateax.set_ylabel("rate (Hz)")
 rateax.set_xlabel("time (ms)")
@@ -204,11 +216,10 @@ print "plotted rates"
 vfig = figure()
 v_ax = vfig.add_subplot(111)
 v_ax.set_ylabel('voltage (mV)')
+v_ax.set_xlabel('time (ms)')
 v_ax.set_title('Exc on (b), Exc on incompl (c) Inh (r)')
-# Exc on and on_incompl
 for idx in range(5):
     v_ax.plot(Mu.t/ms, Mu.u[idx]/mV,'-,b')
-    # Inh
     v_ax.plot(Mu.t/ms, MuInh.u[idx]/mV,'-,r')
 
 show()
