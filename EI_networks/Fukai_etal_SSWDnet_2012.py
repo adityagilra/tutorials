@@ -39,15 +39,15 @@ NI = 2000                       # number of inh neurons
 Ntot = NE+NI                    # total number of neurons
 cE = 0.1                        # exc connection probability
 cI = 0.5                        # inh connection probability
-GIE = 0.018*ms**-1              # E to I
-GEI = 0.002*ms**-1              # I to E
+GIE = 0.017*ms**-1              # E to I
+GEI = 0.0018*ms**-1             # I to E
 GII = 0.0025*ms**-1             # I to I
 lognEEsigma = 1.0               # E to E epsp (mV), std dev of lognormal
 lognEEmean = lognEEsigma**2+log(0.2)
                                 # E to E epsp (mV), mean of lognormal
 Vmax = 20.*mV                   # upper limit of EPSP
-afail = 0.1*mV                  # spike transmission failure param
-gfail = afail/tauS/(VEr-VL)     # afail but in terms of conductance g
+#afail = 0.1*mV                  # spike transmission failure param
+afail = 0.3*mV                  # spike transmission failure param
 
 # stimulation constants
 duration_bg = 50*ms             # duration of initial background 'kick'
@@ -56,10 +56,12 @@ epsp_bg = 10*mV                 # EPSP size
 g_bg = epsp_bg/(VEr-VL)/tauS    # epsp ~= g*tauS*(VEr-VL)
                                 # approx conductance for above EPSP size
                                 # in simulations, in exc neurons,
-                                # g(10mV) gave 7.3 mV; g(1mV) gave 0.77mV;
-                                # g(0.1mV) gave 0.077mV
-approx_g_factor = 0.75          # a factor to partially rectify above approx
+                                # g(10mV) gave epsp of 7.3 mV;
+                                # g(1mV) gave 0.77mV; g(0.1mV) gave 0.077mV
+approx_g_factor = 0.75          # a factor to partially correct this approximation
 g_bg = g_bg/approx_g_factor
+gfail = afail/tauS/(VEr-VL)/approx_g_factor
+                                # afail but in terms of conductance g
 
 duration_settle = 1000*ms       # network settles to bgnd activity after kick
 

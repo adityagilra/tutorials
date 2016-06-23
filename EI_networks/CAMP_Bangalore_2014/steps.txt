@@ -1,0 +1,3 @@
+1. Vary J and plot mean firing rate vs J. Do you get Fig 1a of Ostojic 2014, Nature.
+2. Why did the firing dip and then increase again?
+3. Think of a nice measure that can sharply locate the transition / critical J -- open question.
