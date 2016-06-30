@@ -84,8 +84,11 @@ a = 0.1                         # sparseness i.e.
 Npatterns = 1
 patterns = []
 for k in range(Npatterns):
-    pattern = np.zeros(NE)             # background is 0
-    pattern[uniform(size=NE)<a] = 1    # foreground is +1.
+    pattern = np.zeros(NE)              # background is 0
+    pattern[ np.random.permutation(NE)[:int(a*NE)] ] = 1
+                                        # foreground is +1
+                                        # ensures exactly int(a*NE) 1's.
+    #pattern[uniform(size=NE)<a] = 1     # foreground is +1.
     patterns.append(pattern)
 
 # which pattern is on and what are the stim_neurons
