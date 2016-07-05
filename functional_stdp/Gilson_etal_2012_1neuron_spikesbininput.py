@@ -38,7 +38,7 @@ random.seed(0)          # set seed for reproducibility of simulations
 # ###########################################
 
 simdt = 0.1*ms
-simtime = 1000.0*second
+simtime = 500.0*second
 defaultclock.dt = simdt # set Brian's sim time step
 simdtraw = simdt/second # convert to value in seconds
 
@@ -66,6 +66,8 @@ rho_out = (A-B)/(tauA-tauB) : Hz
 Npools = 4              # Number of correlated pools
 Ninp = 50               # Number of neurons per pool
 nu0 = 10*Hz             # spiking rate of inputs
+corr_ev_duration = 4*ms #duration of correlated events
+corr_ev_freq = 20*Hz    #frequency of correlated events
 
 # ###########################################
 # Network parameters: synapses
@@ -89,10 +91,7 @@ stdp_eqns = ''' w : 1
                 dApre/dt=-Apre/Apre_tau : 1 (event-driven)
                 dApost/dt=-Apost/Apost_tau : 1 (event-driven)
             '''
-#stdp_type = 'log-stdp'
-#stdp_type = 'log-stdp2'
-#stdp_type = 'log-stdp2-post'
-stdp_type = 'log-stdp2-post-noise'
+stdp_type = 'log-stdp'
 #stdp_type = 'mlt-stdp'
 #stdp_type = 'nlta-stdp'
 #stdp_type = 'add-stdp'
@@ -103,54 +102,16 @@ if stdp_type == 'log-stdp':
     beta = 50           # LTP decay factor
     alpha = 5           # LTD curvature factor
     w0 = 0.005          # reference weight
-    pre_eqns = 'Apre+=Apre0; w = clip(w - eta*Apost*((w<=w0)*w/w0 +'\
-                    ' (w>w0)*(1+log(1+(w>w0)*alpha*(w/w0-1))/alpha)), 0,inf)'
-    post_eqns = 'Apost+=Apost0; w = clip(w + eta*Apre*exp(-w/w0/beta), 0,inf)'
-    winit = 2*w0        # initial weights are from 0 to winit
-elif stdp_type == 'log-stdp2':
-    w0 = 0.05           # reference weight
-    Apre0 = 0.05*w0     # incr in Apre (LTP), on pre-spikes;
-                        # at spike coincidence, delta w = -Apre0*eta
-    Apost0 = Apre0 * Apre_tau / Apost_tau
-                        # incr in Apost (LTD) on post spike
-    beta = 50           # LTP decay factor
-    alpha = 5           # LTD curvature factor
-    pre_eqns = 'Apre+=Apre0; w = clip(w - Apost*log(1+w/w0*alpha)/log(1+alpha), 0,inf)'
-    post_eqns = 'Apost+=Apost0; w = clip(w + Apre*exp(-w/w0/beta), 0,inf)'
-    winit = 2*w0        # initial weights are from 0 to winit
-elif stdp_type == 'log-stdp2-post':
-    w0 = 0.05           # reference weight
-    Apre0 = 0.05*w0     # incr in Apre (LTP), on pre-spikes;
-                        # at spike coincidence, delta w = -Apre0*eta
-    Apost0 = Apre0 * Apre_tau / Apost_tau
-                        # incr in Apost (LTD) on post spike
-    ain = 0.1           # purely pre-synaptic contribution
-    aout = -0.05        # purely post-synaptic contribution
-    beta = 50           # LTP decay factor
-    alpha = 20          # LTD curvature factor
-    pre_eqns = 'Apre+=Apre0; w = clip(w - Apost*log(1+w/w0*alpha)/log(1+alpha) + ain,0,inf)'
-    post_eqns = 'Apost+=Apost0; w = clip(w + Apre*exp(-w/w0/beta) + aout,0,inf)'
-    winit = 2*w0        # initial weights are from 0 to winit
-elif stdp_type == 'log-stdp2-post-noise':
-    w0 = 0.05           # reference weight
-    Apre0 = 0.05*w0     # incr in Apre (LTP), on pre-spikes;
-                        # at spike coincidence, delta w = -Apre0*eta
-    Apost0 = Apre0 * Apre_tau / Apost_tau
-                        # incr in Apost (LTD) on post spike
-    ain = 0.1           # purely pre-synaptic contribution
-    aout = -0.05        # purely post-synaptic contribution
-    beta = 50           # LTP decay factor
-    alpha = 20          # LTD curvature factor
-    std_noise = 0.6     # std deviation of noise
-    pre_eqns = 'Apre+=Apre0; w = clip(w - Apost*log(1+w/w0*alpha)/log(1+alpha)*(rand()*std_noise+1) + ain,0,inf)'
-    post_eqns = 'Apost+=Apost0; w = clip(w + Apre*exp(-w/w0/beta) + aout,0,inf)'
+    pre_eqns = 'Apre+=Apre0; w+=-eta*Apost*((w<=w0)*w/w0 +'\
+                    ' (w>w0)*(1+log(1+(w>w0)*alpha*(w/w0-1))/alpha))'
+    post_eqns = 'Apost+=Apost0; w += eta*Apre*exp(-w/w0/beta)'
     winit = 2*w0        # initial weights are from 0 to winit
 elif stdp_type == 'mlt-stdp':
     Apre0 = 1.0         # incr in Apre (LTP), on pre-spikes;
                         # at spike coincidence, delta w = -Apre0*eta
     Apost0 = 100        # incr in Apost (LTD) on post spike
-    pre_eqns = 'Apre+=Apre0; w = clip(w - eta*Apost*w,0,inf)'
-    post_eqns = 'Apost+=Apost0; w = clip(w + eta*Apre,0,inf)'
+    pre_eqns = 'Apre+=Apre0; w+=-eta*Apost*w'
+    post_eqns = 'Apost+=Apost0; w += eta*Apre'
     winit = 0.04        # initial weights are from 0 to winit
 elif stdp_type == 'nlta-stdp':
     Apre0 = 1.0         # incr in Apre (LTP), on pre-spikes;
@@ -158,8 +119,8 @@ elif stdp_type == 'nlta-stdp':
     Apost0 = 0.8        # incr in Apost (LTD) on post spike
     wmax = 0.04         # max weight (soft bound)
     gamma = 0.1         # weight dependence exponent
-    pre_eqns = 'Apre+=Apre0; w = clip(w - eta*Apost*(w/wmax)**gamma, 0,inf)'
-    post_eqns = 'Apost+=Apost0; w = clip(w + eta*Apre*(1-w/wmax)**gamma, 0,inf)'
+    pre_eqns = 'Apre+=Apre0; w+=-eta*Apost*(w/wmax)**gamma'
+    post_eqns = 'Apost+=Apost0; w += eta*Apre*(1-w/wmax)**gamma'
     winit = wmax        # initial weights are from 0 to winit
 elif stdp_type == 'add-stdp':
     Apre0 = 1.0         # incr in Apre (LTP), on pre-spikes;
@@ -184,38 +145,44 @@ P=NeuronGroup(1,model=eqs_neurons,\
 # Stimuli
 # ###########################################
 
-# generate Poisson spike trains of size rate*T
-num_events = np.random.poisson(nu0*simtime,size=Npools*Ninp)
-spiketimes = []
-for k in range(Npools*Ninp):
-    spiketimes.append(simtime/second*np.random.rand(num_events[k]))
+#inputs rates for absence of correlated events such that all neurons have same firing rate F
+baseline_input_rates = np.zeros(Npools*Ninp)
+for i_gp in range(Npools):
+    baseline_input_rates[i_gp*Ninp:(i_gp+1)*Ninp] = nu0/Hz*(1.-Q[:,i_gp].sum()*corr_ev_freq*corr_ev_duration)
+    #print baseline_input_rates[i_gp*N1]
+if baseline_input_rates.min()<nu0/2/Hz:
+    print 'too strong corr'
+    xxx
 
-# for the 3 driving neurons, generate spike trains
-for k in range(3):
-    num_events = np.random.poisson(nu0*simtime)
-    spiketimes_drive = simtime/second*np.random.rand(num_events)
-    # for each pool, and each neuron within a pool, select some of these spikes based on the correlation
-    for l in range(Npools):
-        if Q[k,l]!=0.:
-            for m in range(Ninp):
-                spikes_selected = spiketimes_drive[where(np.random.rand(len(spiketimes_drive))<Q[k,l])]
-                spiketimes[l*Ninp+m] = np.append(spiketimes[l*Ninp+m],spikes_selected)
+correlated_inputs = True
+#correlated input spike trains with 4 groups and mixing matrix A between groups
+if correlated_inputs:
+    #correlated inputs
+    Pinp1 = PoissonGroup(Npools*Ninp,rates=nu0)
+    Ppools = []
+    for k in range(Npools):
+        Ppools.append(Pinp1[k*Ninp:(k+1)*Ninp])
+    #driver inputs
+    Pinp0 = PoissonGroup(3,rates=corr_ev_freq,dt=corr_ev_duration)
+    Pinps = [Pinp0[:1],Pinp0[1:2],Pinp0[2:]]
 
-# flatten spiketimes and remove spikes in the same timebin for each neuron
-indices = []
-spiketimes_flat = array([])
-for k in range(Npools*Ninp):
-    spiketimes[k]=np.sort(spiketimes[k])
-    # keep removing spikes that overlap until none do
-    while True:
-        diffs = np.diff(spiketimes[k])
-        good_idxs = where(abs(diffs)>simdt/second)[0]
-        if len(good_idxs)+1==len(spiketimes[k]): break
-        spiketimes[k] = spiketimes[k][np.append(good_idxs,-1)]
-    indices.extend([k]*len(spiketimes[k]))
-    spiketimes_flat = append(spiketimes_flat,spiketimes[k])
-
-Pinp1=SpikeGeneratorGroup(Npools*Ninp,np.array(indices),np.array(spiketimes_flat)*second)
+    inpconns = []
+    def correlate_spike_trains(PR,P,k,l):
+        con = Synapses(PR,P,'',on_pre='spikerate='+\
+                    str(baseline_input_rates[k]+Q[k,l]*nu0/Hz)+'*Hz')
+        con.connect(True)
+        con.delay = 0.*ms
+        con1 = Synapses(PR,P,'',on_pre='spikerate=nu0')
+        con1.connect(True)
+        con1.delay = corr_ev_duration
+        inpconns.append((con,con1))
+    for k in range(3):
+        for l in range(Npools):
+            if Q[k,l]!=0.:
+                correlate_spike_trains(Pinps[k],Ppools[l],k,l)
+else:
+    #uncorrelated inputs
+    Pinp1 = PoissonGroup(Npools*Ninp, rates=nu0)
 
 # ###########################################
 # Connecting the network 
@@ -284,10 +251,8 @@ subplot(233)
 plot(range(Npools*Ninp),wm.w[:,-1],'.')
 for k in range(Npools):
     meanpoolw = mean(wm.w[k*Ninp:(k+1)*Ninp,-1])
-    plot([k*Ninp,(k+1)*Ninp],[meanpoolw,meanpoolw],'-k',lw=3)
+    plot([k*Ninp,(k+1)*Ninp],[meanpoolw,meanpoolw],'-k')
 xlabel("")
-
-print wm.w
 
 # plot eigenvectors of corr = Q^T Q matrix
 w,v = np.linalg.eig(corr)
@@ -296,10 +261,10 @@ plot(v)
 
 # plot averaged weights over last 50s
 subplot(236)
-plot(range(Npools*Ninp),mean(wm.w[:,:50],axis=1),'.')
+plot(range(Npools*Ninp),mean(wm.w[:,-50:],axis=1),'.')
 for k in range(Npools):
     meanpoolw = mean(wm.w[k*Ninp:(k+1)*Ninp,-50:])
-    plot([k*Ninp,(k+1)*Ninp],[meanpoolw,meanpoolw],'-k',lw=3)
+    plot([k*Ninp,(k+1)*Ninp],[meanpoolw,meanpoolw],'-k')
 xlabel("")
 
 fig.tight_layout()
