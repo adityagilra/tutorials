@@ -32,17 +32,17 @@ else:
 import random
 import time
 
-np.random.seed(100) # set seed for reproducibility of simulations
-random.seed(100) # set seed for reproducibility of simulations
+np.random.seed(100)     # set seed for reproducibility of simulations
+random.seed(100)        # set seed for reproducibility of simulations
 
 # ###########################################
 # Simulation parameters
 # ###########################################
 
 simdt = 0.1*ms
-simtime = 0.5*second
-defaultclock.dt = simdt     # set Brian's sim time step
-dt = simdt/second           # convert to value in seconds
+simtime = 3.*second
+defaultclock.dt = simdt # set Brian's sim time step
+dt = simdt/second       # convert to value in seconds
 
 # ###########################################
 # Neuron model
@@ -86,53 +86,84 @@ g = 5.0             # -gJ is the inh strength. For exc-inh balance g>~f(1-f)=4
 # Network parameters: synaptic plasticity
 # ###########################################
 
+#rule_type = 'stdp'
+rule_type = 'triplet_stdp'
+#rule_type = 'triplet_heteroplast'
+#rule_type = 'triplet_homeoplast_fastbcm'
+
 wmax = 5.               # hard bound on synaptic weight
-Apre_tau = 20*ms        # STDP Apre LTP time constant
-Apost_tau = 20*ms       # STDP Apost LTD time constant
-Apostslow_tau = 100*ms
-Aposthomeo_tau = 1*second
-#Aposthomeo_tau = 1*second
-Apre0 = 1.0             # incr in Apre, on pre-spikes;
+Apre_tau = 20*ms        # STDP Apre LTP time constant; tauplus
+Apost_tau = 20*ms       # STDP Apost LTD time constant; tauminus
+Apre0 = 1.0             # incr in Apre, on pre-spikes; Aplus for LTP
                         # at spike coincidence, delta w = -Apre0*eta
+Apost0 = 1.0            # incr in Apost on post-spikes; Aminus for LTD
+eta = 1e-1              # learning rate
 Apostslow0 = 1.0        # incr in Apostslow on post spike
-#rate0 = 50*Hz
-rate0 = 25*Hz
-Apost0 = Apre0*Apre_tau*(1+Apostslow0*Apostslow_tau*rate0)/Apost_tau
-                        # incr in Apost on post spike for triplet rule
-                        # only initial value, later calculated
-print 'Apost0 =',Apost0
-#beta = 1.2              # heterosynaptic plasticity strength parameter
-beta = 0.5              # heterosynaptic plasticity strength parameter
-eta = 1e-3              # learning rate
-stdp_eqns = ''' wsyn : 1
-                dApre/dt=-Apre/Apre_tau : 1 (event-driven)
-                dApost/dt=-Apost/Apost_tau : 1 (event-driven)
-                dApostslow/dt=-Apostslow/Apostslow_tau : 1 (event-driven)
-                dAposthomeo/dt=-Aposthomeo/Aposthomeo_tau : 1 (event-driven) '''
+Apostslow_tau = 100*ms
+
 pre_eqns = '''Apre += Apre0
                 wsyn += -Apost*eta
                 wsyn=clip(wsyn,0,wmax)
                 v+=wsyn*J'''
-#post_eqns = '''Apost += Apost0
-#                wsyn += eta*(Apre + Apre*Apostslow)
-#                Apostslow+=Apostslow0
-#                wsyn=clip(wsyn,0,wmax)'''
-post_eqns = '''Apost += Apost0
-                wsyn += eta*Apre*(1 + Apostslow + beta*(Apostslow/(rate0*Apostslow_tau))**2)
-                Apostslow+=Apostslow0
-                wsyn=clip(wsyn,0,wmax)'''
-#post_eqns = '''Apost += Apre0*Apre_tau*(1+Apostslow0*Apostslow_tau*(Aposthomeo/Aposthomeo_tau)**2/rate0)/Apost_tau
-#                wsyn += eta*(Apre + Apre*Apostslow)
-#                Apostslow+=Apostslow0
-#                wsyn=clip(wsyn,0,wmax)'''
 
-def dwbydt(r):
-    return eta*(Apre0*Apre_tau/second-Apost0*Apost_tau/second)*r**2 + \
-               eta*Apre0*Apre_tau/second*Apostslow0*Apostslow_tau/second*r**3 -\
-               eta*beta*Apre0*Apre_tau/second * Apostslow0**2 * r**4 / (rate0/Hz)**2
+if rule_type == 'stdp':
+    stdp_eqns = ''' wsyn : 1
+                    dApre/dt=-Apre/Apre_tau : 1 (event-driven)
+                    dApost/dt=-Apost/Apost_tau : 1 (event-driven)'''
+    post_eqns = '''Apost += Apost0
+                    wsyn += eta*Apre
+                    wsyn=clip(wsyn,0,wmax)'''
+elif rule_type == 'triplet_stdp':
+    stdp_eqns = ''' wsyn : 1
+                    dApre/dt=-Apre/Apre_tau : 1 (event-driven)
+                    dApost/dt=-Apost/Apost_tau : 1 (event-driven)
+                    dApostslow/dt=-Apostslow/Apostslow_tau : 1 (event-driven) '''
+    rate0 = 50*Hz
+    Apost0 = Apre0*Apre_tau*(1+Apostslow0*Apostslow_tau*rate0)/Apost_tau
+                        # incr in Apost on post spike for triplet rule
+    post_eqns = '''Apost += Apost0
+                    wsyn += eta*Apre*(1 + Apostslow)
+                    Apostslow+=Apostslow0
+                    wsyn=clip(wsyn,0,wmax)'''
+    def dwbydt(r):
+        return eta*(Apre0*Apre_tau/second - Apost0*Apost_tau/second)*r**2 + \
+                   eta*Apre0*Apre_tau/second * Apostslow0*Apostslow_tau/second*r**3
+elif rule_type == 'triplet_heteroplast':
+    stdp_eqns = ''' wsyn : 1
+                    dApre/dt=-Apre/Apre_tau : 1 (event-driven)
+                    dApost/dt=-Apost/Apost_tau : 1 (event-driven)
+                    dApostslow/dt=-Apostslow/Apostslow_tau : 1 (event-driven) '''
+    ratemid = 40*Hz
+    rate0 = 80*Hz
+    beta = Apostslow_tau/Apostslow0/(ratemid+rate0)
+                        # heterosynaptic plasticity strength parameter
+    Apost0 = Apre0*Apre_tau/Apost_tau*(1+beta*Apostslow0**2*ratemid*rate0)
+    post_eqns = '''Apost += Apost0
+                    wsyn += eta*Apre*(1 + Apostslow - beta*(Apostslow/Apostslow_tau)**2)
+                    Apostslow+=Apostslow0
+                    wsyn=clip(wsyn,0,wmax)'''
+    def dwbydt(r):
+        return eta*(Apre0*Apre_tau/second - Apost0*Apost_tau/second)*r**2 + \
+                   eta*Apre0*Apre_tau/second * Apostslow0*Apostslow_tau/second*r**3 -\
+                   eta*Apre0*Apre_tau/second * beta*Hz**2 * Apostslow0**2 * r**4
+elif rule_type == 'triplet_homeoplast_fastbcm':
+    stdp_eqns = ''' wsyn : 1
+                    dApre/dt=-Apre/Apre_tau : 1 (event-driven)
+                    dApost/dt=-Apost/Apost_tau : 1 (event-driven)
+                    dApostslow/dt=-Apostslow/Apostslow_tau : 1 (event-driven)
+                    dAposthomeo/dt=-Aposthomeo/Aposthomeo_tau : 1 (event-driven) '''
+    Aposthomeo_tau = 1*second
+    post_eqns = '''Apost += Apre0*Apre_tau*(1+Apostslow0*Apostslow_tau*(Aposthomeo/Aposthomeo_tau)**2/rate0)/Apost_tau
+                    wsyn += eta*Apre*(1 - Apostslow)
+                    Apostslow+=Apostslow0
+                    wsyn=clip(wsyn,0,wmax)'''
+else:
+    print 'choose a plasticity rule'
+    sys.exit(1)
+print rule_type
 
 figure()
-rrange = arange(0,100,0.1)
+rrange = arange(0,90,0.1)
 plot(rrange,dwbydt(rrange))
 
 #show()
@@ -203,7 +234,7 @@ conII.wsyn = -g
 P.muext = muext0
 # 400 neurons (~10%) receive stimulus current to increase firing
 Pstim = P[:400]
-Pstim.muext = muext0 + 5*mV
+Pstim.muext = muext0 + 7*mV
 
 # ###########################################
 # Setting up monitors

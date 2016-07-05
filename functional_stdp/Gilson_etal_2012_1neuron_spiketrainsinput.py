@@ -138,37 +138,46 @@ elif stdp_type == 'add-stdp':
 # post-synaptic neuron
 P=NeuronGroup(1,model=eqs_neurons,\
                 threshold='rand()<rho_out*dt',method='euler')
-Pinp1=NeuronGroup(Npools*Ninp,model='spikerate : Hz',\
-                threshold='rand()<spikerate*dt')
-Pinp1.spikerate = nu0
-Ppools = []
-for k in range(Npools):
-    Ppools.append(Pinp1[k*Ninp:(k+1)*Ninp])
-Pinp0=NeuronGroup(3,model='spikerate : Hz',\
-                threshold='rand()<spikerate*dt')
-Pinp0.spikerate = nu0
-Pinps = [Pinp0[:1],Pinp0[1:2],Pinp0[2:]]
-
-# ###########################################
-# Connecting the network 
-# ###########################################
-
-inpconns = []
-def correlate_spike_trains(PR,P,csqrt):
-    con = Synapses(PR,P,'',on_pre='spikerate='+str(csqrt)+'/dt')
-    con.connect(True)
-    con.delay = 0.*ms
-    con1 = Synapses(PR,P,'',on_pre='spikerate=nu0')
-    con1.connect(True)
-    con1.delay = simdt
-    inpconns.append((con,con1))
-for k in range(3):
-    for l in range(Npools):
-        if Q[k,l]!=0.:
-            correlate_spike_trains(Pinps[k],Ppools[l],Q[k,l])
 
 # ###########################################
 # Stimuli
+# ###########################################
+
+# generate Poisson spike trains of size rate*T
+num_events = np.random.poisson(nu0*simtime,size=Npools*Ninp)
+spiketimes = []
+for k in range(Npools*Ninp):
+    spiketimes.append(simtime/second*np.random.rand(num_events[k]))
+
+# for the 3 driving neurons, generate spike trains
+for k in range(3):
+    num_events = np.random.poisson(nu0*simtime)
+    spiketimes_drive = simtime/second*np.random.rand(num_events)
+    # for each pool, and each neuron within a pool, select some of these spikes based on the correlation
+    for l in range(Npools):
+        if Q[k,l]!=0.:
+            for m in range(Ninp):
+                spikes_selected = spiketimes_drive[where(np.random.rand(len(spiketimes_drive))<Q[k,l])]
+                spiketimes[l*Ninp+m] = np.append(spiketimes[l*Ninp+m],spikes_selected)
+
+# flatten spiketimes and remove spikes in the same timebin for each neuron
+indices = []
+spiketimes_flat = array([])
+for k in range(Npools*Ninp):
+    spiketimes[k]=np.sort(spiketimes[k])
+    # keep removing spikes that overlap until none do
+    while True:
+        diffs = np.diff(spiketimes[k])
+        good_idxs = where(abs(diffs)>simdt/second)[0]
+        if len(good_idxs)+1==len(spiketimes[k]): break
+        spiketimes[k] = spiketimes[k][np.append(good_idxs,-1)]
+    indices.extend([k]*len(spiketimes[k]))
+    spiketimes_flat = append(spiketimes_flat,spiketimes[k])
+
+Pinp1=SpikeGeneratorGroup(Npools*Ninp,np.array(indices),np.array(spiketimes_flat)*second)
+
+# ###########################################
+# Connecting the network 
 # ###########################################
 
 con = Synapses(Pinp1,P,stdp_eqns,\
@@ -184,11 +193,9 @@ con.w = uniform(size=(Npools*Ninp,))*2*winit
 
 sm = SpikeMonitor(P)
 sminp1 = SpikeMonitor(Pinp1)
-sminp0 = SpikeMonitor(Pinp0)
 
 # Population monitor
 popminp1 = PopulationRateMonitor(Pinp1)
-popminp0 = PopulationRateMonitor(Pinp0)
 
 # voltage monitor
 sm_rho = StateMonitor(P,'rho_out',record=[0])
@@ -202,7 +209,6 @@ wm = StateMonitor(con,'w',record=range(Npools*Ninp), dt=1*second)
 
 # a simple run would not include the monitors
 net = Network(collect())            # collects Brian2 objects in current context
-net.add(inpconns)                   # manually add objects
 
 print "Setup complete, running for",simtime,"at dt =",simdtraw,"s."
 t1 = time.time()
@@ -219,11 +225,6 @@ spiket = array(sm.t/second) # take spiketimes of all neurons
 spikei = array(sm.i)
 
 fig = figure()
-# raster plot
-subplot(231)
-plot(sminp0.t/second,sminp0.i,'.')
-xlim([0,1.0])
-xlabel("")
 
 # raster plot
 subplot(234)
@@ -244,7 +245,7 @@ xlabel("")
 
 # plot eigenvectors of corr = Q^T Q matrix
 w,v = np.linalg.eig(corr)
-subplot(232)
+subplot(235)
 plot(v)
 
 # plot averaged weights over last 50s
