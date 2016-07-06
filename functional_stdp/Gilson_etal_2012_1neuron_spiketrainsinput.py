@@ -5,7 +5,7 @@ Gilson, Matthieu, Tomoki Fukai, and Anthony N. Burkitt.
 Spectral Analysis of Input Spike Trains by Spike-Timing-Dependent Plasticity.
 PLoS Comput Biol 8, no. 7 (July 5, 2012): e1002584. doi:10.1371/journal.pcbi.1002584.
 
-Author: Aditya Gilra, Jun 2016.
+Author: Aditya Gilra, Jun 2016. (with inputs from Matthieu Gilson)
  in Brian2rc3 for CAMP 2016.
 '''
 
@@ -38,7 +38,7 @@ random.seed(0)          # set seed for reproducibility of simulations
 # ###########################################
 
 simdt = 0.1*ms
-simtime = 1000.0*second
+simtime = 200.0*second
 defaultclock.dt = simdt # set Brian's sim time step
 simdtraw = simdt/second # convert to value in seconds
 
@@ -90,6 +90,7 @@ stdp_eqns = ''' w : 1
                 dApost/dt=-Apost/Apost_tau : 1 (event-driven)
             '''
 #stdp_type = 'log-stdp'
+#stdp_type = 'log-stdp-post'
 #stdp_type = 'log-stdp2'
 #stdp_type = 'log-stdp2-post'
 stdp_type = 'log-stdp2-post-noise'
@@ -106,6 +107,19 @@ if stdp_type == 'log-stdp':
     pre_eqns = 'Apre+=Apre0; w = clip(w - eta*Apost*((w<=w0)*w/w0 +'\
                     ' (w>w0)*(1+log(1+(w>w0)*alpha*(w/w0-1))/alpha)), 0,inf)'
     post_eqns = 'Apost+=Apost0; w = clip(w + eta*Apre*exp(-w/w0/beta), 0,inf)'
+    winit = 2*w0        # initial weights are from 0 to winit
+if stdp_type == 'log-stdp-post':
+    Apre0 = 1.0         # incr in Apre (LTP), on pre-spikes;
+                        # at spike coincidence, delta w = -Apre0*eta
+    Apost0 = 0.5        # incr in Apost (LTD) on post spike
+    beta = 50           # LTP decay factor
+    alpha = 5           # LTD curvature factor
+    w0 = 0.005          # reference weight
+    ain = 0.1           # purely pre-synaptic contribution
+    aout = -0.05        # purely post-synaptic contribution
+    pre_eqns = 'Apre+=Apre0; w = clip(w - eta*Apost*((w<=w0)*w/w0 +'\
+                    ' (w>w0)*(1+log(1+(w>w0)*alpha*(w/w0-1))/alpha)) + eta*ain, 0,inf)'
+    post_eqns = 'Apost+=Apost0; w = clip(w + eta*Apre*exp(-w/w0/beta) + eta*aout, 0,inf)'
     winit = 2*w0        # initial weights are from 0 to winit
 elif stdp_type == 'log-stdp2':
     w0 = 0.05           # reference weight
@@ -124,8 +138,8 @@ elif stdp_type == 'log-stdp2-post':
                         # at spike coincidence, delta w = -Apre0*eta
     Apost0 = Apre0 * Apre_tau / Apost_tau
                         # incr in Apost (LTD) on post spike
-    ain = 0.1           # purely pre-synaptic contribution
-    aout = -0.05        # purely post-synaptic contribution
+    ain = 0.1*w0        # purely pre-synaptic contribution
+    aout = -0.05*w0     # purely post-synaptic contribution
     beta = 50           # LTP decay factor
     alpha = 20          # LTD curvature factor
     pre_eqns = 'Apre+=Apre0; w = clip(w - Apost*log(1+w/w0*alpha)/log(1+alpha) + ain,0,inf)'
@@ -137,12 +151,12 @@ elif stdp_type == 'log-stdp2-post-noise':
                         # at spike coincidence, delta w = -Apre0*eta
     Apost0 = Apre0 * Apre_tau / Apost_tau
                         # incr in Apost (LTD) on post spike
-    ain = 0.1           # purely pre-synaptic contribution
-    aout = -0.05        # purely post-synaptic contribution
+    ain = 0.1*w0        # purely pre-synaptic contribution
+    aout = -0.05*w0     # purely post-synaptic contribution
     beta = 50           # LTP decay factor
     alpha = 20          # LTD curvature factor
     std_noise = 0.6     # std deviation of noise
-    pre_eqns = 'Apre+=Apre0; w = clip(w - Apost*log(1+w/w0*alpha)/log(1+alpha)*(rand()*std_noise+1) + ain,0,inf)'
+    pre_eqns = 'Apre+=Apre0; w = clip(w - Apost*log(1+w/w0*alpha)/log(1+alpha)*(randn()*std_noise+1) + ain,0,inf)'
     post_eqns = 'Apost+=Apost0; w = clip(w + Apre*exp(-w/w0/beta) + aout,0,inf)'
     winit = 2*w0        # initial weights are from 0 to winit
 elif stdp_type == 'mlt-stdp':
@@ -194,7 +208,8 @@ for k in range(Npools*Ninp):
 for k in range(3):
     num_events = np.random.poisson(nu0*simtime)
     spiketimes_drive = simtime/second*np.random.rand(num_events)
-    # for each pool, and each neuron within a pool, select some of these spikes based on the correlation
+    # for each pool, and each neuron within a pool,
+    #  select some of these spikes based on the correlation
     for l in range(Npools):
         if Q[k,l]!=0.:
             for m in range(Ninp):
@@ -266,12 +281,23 @@ spiket = array(sm.t/second) # take spiketimes of all neurons
 spikei = array(sm.i)
 
 fig = figure()
+cols = ['r','b','g','c']
 
 # raster plot
-subplot(234)
+subplot(221)
 plot(sminp1.t/second,sminp1.i,',')
 xlim([0,1])
 xlabel("time (s)")
+
+# weight evolution 
+subplot(222)
+meanpoolw = []
+for k in range(Npools):
+    meanpoolw.append(mean(wm.w[k*Ninp:(k+1)*Ninp,:],axis=0)/w0)
+    plot(wm.t/second,meanpoolw[-1],'-'+cols[k],lw=(4-k))
+xlabel("time (s)")
+ylabel("PCA-weight")
+title('weight evolution')
 
 ## plot output firing rate sm_rho.rho_out[nrn_idx,time_idx]
 #subplot(232)
@@ -280,28 +306,55 @@ xlabel("time (s)")
 #xlabel("")
 
 # plot final weights wm.w[syn_idx,time_idx]
-subplot(233)
+subplot(223)
 plot(range(Npools*Ninp),wm.w[:,-1],'.')
 for k in range(Npools):
-    meanpoolw = mean(wm.w[k*Ninp:(k+1)*Ninp,-1])
-    plot([k*Ninp,(k+1)*Ninp],[meanpoolw,meanpoolw],'-k',lw=3)
-xlabel("")
+    meanpoolw_end = mean(wm.w[k*Ninp:(k+1)*Ninp,-1])
+    plot([k*Ninp,(k+1)*Ninp],[meanpoolw_end,meanpoolw_end],'-'+cols[k],lw=3)
+xlabel("pre-neuron #")
+ylabel("weight (/w0)")
+title("end weights")
 
-print wm.w
+# plot averaged weights over last 50s (weights are sampled per second)
+subplot(224)
+plot(range(Npools*Ninp),mean(wm.w[:,:50],axis=1),'.')
+for k in range(Npools):
+    meanpoolw_end = mean(wm.w[k*Ninp:(k+1)*Ninp,-50:])
+    plot([k*Ninp,(k+1)*Ninp],[meanpoolw_end,meanpoolw_end],'-'+cols[k],lw=3)
+xlabel("pre-neuron #")
+ylabel("weight (/w0)")
+title("mean (50s) end weights")
+
+fig = figure()
 
 # plot eigenvectors of corr = Q^T Q matrix
 w,v = np.linalg.eig(corr)
-subplot(235)
-plot(v)
-
-# plot averaged weights over last 50s
-subplot(236)
-plot(range(Npools*Ninp),mean(wm.w[:,:50],axis=1),'.')
+subplot(131)
+#plot(v)
 for k in range(Npools):
-    meanpoolw = mean(wm.w[k*Ninp:(k+1)*Ninp,-50:])
-    plot([k*Ninp,(k+1)*Ninp],[meanpoolw,meanpoolw],'-k',lw=3)
-xlabel("")
+    plot(v[:,k],'.-'+cols[k],lw=4-k)
+xlabel("pre-neuron #")
+ylabel("weight (/w0)")
+title('eigenvectors of corr matrix')
 
-fig.tight_layout()
+# weight evolution along eigenvectors of corr matrix
+subplot(132)
+for k in range(Npools):
+    plot(wm.t/second,dot(v[:,k],meanpoolw),'-'+cols[k],lw=(4-k))
+xlabel('time (s)')
+ylabel("weight (/w0)")
+title('weights along PCA components')
+
+# weight evolution along original drivers
+subplot(133)
+for k in range(3):
+    plot(wm.t/second,dot(Q[k],meanpoolw),'-'+cols[k],lw=(4-k))
+xlabel('time (s)')
+ylabel("driver neuron #")
+yticks([0,1,2])
+title('weights along ICA components')
+
+#fig.tight_layout()
+#fig.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=0.1, hspace=0.1)
 
 show()
