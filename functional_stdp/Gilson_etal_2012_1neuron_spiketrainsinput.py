@@ -23,8 +23,8 @@ from brian2 import *    # importing brian also does:
 stand_alone = True
 if stand_alone: set_device('cpp_standalone', build_on_run=False)
 else:
-    prefs.codegen.target = 'numpy'
-    #prefs.codegen.target = 'weave'
+    #prefs.codegen.target = 'numpy'
+    prefs.codegen.target = 'weave'
     #prefs.codegen.target = 'cython'
 import random
 import time
@@ -38,16 +38,13 @@ random.seed(0)          # set seed for reproducibility of simulations
 # ###########################################
 
 simdt = 0.1*ms
-simtime = 200.0*second
+simtime = 3.0*second
 defaultclock.dt = simdt # set Brian's sim time step
 simdtraw = simdt/second # convert to value in seconds
 
 # ###########################################
 # Neuron model
 # ###########################################
-
-# equation: dv/dt=(1/taum)*(-(v-el))
-# with spike when v>vt, reset to vr
 
 taudelay = 0.75*ms      # synaptic delay
 tauA = 1*ms             # synaptic epsp tauA
@@ -64,7 +61,7 @@ rho_out = (A-B)/(tauA-tauB) : Hz
 # ###########################################
 
 Npools = 4              # Number of correlated pools
-Ninp = 50               # Number of neurons per pool
+Ninp = 500               # Number of neurons per pool
 nu0 = 10*Hz             # spiking rate of inputs
 
 # ###########################################
@@ -74,6 +71,7 @@ nu0 = 10*Hz             # spiking rate of inputs
 Q = array([[sqrt(0.4),sqrt(0.1),0.,0.],\
             [0.,sqrt(0.2),sqrt(0.2),0.],\
             [0.,0.,sqrt(0.1),sqrt(0.1)]])
+Q = np.zeros(shape=(3,4))
 corr = dot(transpose(Q),Q)
 print "Correlation matrix between pools is\n",corr
 
@@ -91,12 +89,14 @@ stdp_eqns = ''' w : 1
             '''
 #stdp_type = 'log-stdp'
 #stdp_type = 'log-stdp-post'
+#stdp_type = 'log-stdp-noise'
 #stdp_type = 'log-stdp2'
 #stdp_type = 'log-stdp2-post'
-stdp_type = 'log-stdp2-post-noise'
+#stdp_type = 'log-stdp2-noise'
+#stdp_type = 'log-stdp2-post-noise'
 #stdp_type = 'mlt-stdp'
 #stdp_type = 'nlta-stdp'
-#stdp_type = 'add-stdp'
+stdp_type = 'add-stdp'
 if stdp_type == 'log-stdp':
     Apre0 = 1.0         # incr in Apre (LTP), on pre-spikes;
                         # at spike coincidence, delta w = -Apre0*eta
@@ -106,6 +106,18 @@ if stdp_type == 'log-stdp':
     w0 = 0.005          # reference weight
     pre_eqns = 'Apre+=Apre0; w = clip(w - eta*Apost*((w<=w0)*w/w0 +'\
                     ' (w>w0)*(1+log(1+(w>w0)*alpha*(w/w0-1))/alpha)), 0,inf)'
+    post_eqns = 'Apost+=Apost0; w = clip(w + eta*Apre*exp(-w/w0/beta), 0,inf)'
+    winit = 2*w0        # initial weights are from 0 to winit
+if stdp_type == 'log-stdp-noise':
+    Apre0 = 1.0         # incr in Apre (LTP), on pre-spikes;
+                        # at spike coincidence, delta w = -Apre0*eta
+    Apost0 = 0.5        # incr in Apost (LTD) on post spike
+    beta = 50           # LTP decay factor
+    alpha = 5           # LTD curvature factor
+    w0 = 0.005          # reference weight
+    std_noise = 1.5     # std deviation of noise
+    pre_eqns = 'Apre+=Apre0; w = clip(w - eta*Apost*((w<=w0)*w/w0 +'\
+                    ' (w>w0)*(1+log(1+(w>w0)*alpha*(w/w0-1))/alpha))*(randn()*std_noise+1), 0,inf)'
     post_eqns = 'Apost+=Apost0; w = clip(w + eta*Apre*exp(-w/w0/beta), 0,inf)'
     winit = 2*w0        # initial weights are from 0 to winit
 if stdp_type == 'log-stdp-post':
@@ -145,6 +157,18 @@ elif stdp_type == 'log-stdp2-post':
     pre_eqns = 'Apre+=Apre0; w = clip(w - Apost*log(1+w/w0*alpha)/log(1+alpha) + ain,0,inf)'
     post_eqns = 'Apost+=Apost0; w = clip(w + Apre*exp(-w/w0/beta) + aout,0,inf)'
     winit = 2*w0        # initial weights are from 0 to winit
+elif stdp_type == 'log-stdp2-noise':
+    w0 = 0.05           # reference weight
+    Apre0 = 0.05*w0     # incr in Apre (LTP), on pre-spikes;
+                        # at spike coincidence, delta w = -Apre0*eta
+    Apost0 = Apre0 * Apre_tau / Apost_tau
+                        # incr in Apost (LTD) on post spike
+    beta = 50           # LTP decay factor
+    alpha = 20          # LTD curvature factor
+    std_noise = 0.6     # std deviation of noise
+    pre_eqns = 'Apre+=Apre0; w = clip(w - Apost*log(1+w/w0*alpha)/log(1+alpha)*(randn()*std_noise+1),0,inf)'
+    post_eqns = 'Apost+=Apost0; w = clip(w + Apre*exp(-w/w0/beta),0,inf)'
+    winit = 2*w0        # initial weights are from 0 to winit
 elif stdp_type == 'log-stdp2-post-noise':
     w0 = 0.05           # reference weight
     Apre0 = 0.05*w0     # incr in Apre (LTP), on pre-spikes;
@@ -166,6 +190,7 @@ elif stdp_type == 'mlt-stdp':
     pre_eqns = 'Apre+=Apre0; w = clip(w - eta*Apost*w,0,inf)'
     post_eqns = 'Apost+=Apost0; w = clip(w + eta*Apre,0,inf)'
     winit = 0.04        # initial weights are from 0 to winit
+    w0 = 0.04
 elif stdp_type == 'nlta-stdp':
     Apre0 = 1.0         # incr in Apre (LTP), on pre-spikes;
                         # at spike coincidence, delta w = -Apre0*eta
@@ -185,6 +210,7 @@ elif stdp_type == 'add-stdp':
     post_eqns = 'Apost+=Apost0; w += eta*Apre;'\
                     ' w=clip(w,0,wmax)'
     winit = wmax        # initial weights are from 0 to winit
+    w0 = wmax
 
 # ###########################################
 # Initialize neuron (sub)groups
@@ -230,14 +256,15 @@ for k in range(Npools*Ninp):
     indices.extend([k]*len(spiketimes[k]))
     spiketimes_flat = append(spiketimes_flat,spiketimes[k])
 
-Pinp1=SpikeGeneratorGroup(Npools*Ninp,np.array(indices),np.array(spiketimes_flat)*second)
+#Pinp1=SpikeGeneratorGroup(Npools*Ninp,np.array(indices),np.array(spiketimes_flat)*second)
+Pinp1 = PoissonGroup(Npools*Ninp,rates=nu0)
 
 # ###########################################
 # Connecting the network 
 # ###########################################
 
 con = Synapses(Pinp1,P,stdp_eqns,\
-                on_pre='A+=w;B+=w;'+pre_eqns,on_post=post_eqns,
+                on_pre='A+=w*0.1;B+=w*0.1;'+pre_eqns,on_post=post_eqns,
                 method='euler')
 con.connect(True)
 con.delay = uniform(size=(Npools*Ninp,))*1.*ms + 4.*ms
@@ -251,6 +278,7 @@ sm = SpikeMonitor(P)
 sminp1 = SpikeMonitor(Pinp1)
 
 # Population monitor
+popm = PopulationRateMonitor(P)
 popminp1 = PopulationRateMonitor(Pinp1)
 
 # voltage monitor
@@ -299,11 +327,11 @@ xlabel("time (s)")
 ylabel("PCA-weight")
 title('weight evolution')
 
-## plot output firing rate sm_rho.rho_out[nrn_idx,time_idx]
-#subplot(232)
-#plot(sm_rho.t/second,sm_rho.rho_out[0]/Hz,'-')
-#xlim([0,simtime/second])
-#xlabel("")
+# plot output firing rate sm_rho.rho_out[nrn_idx,time_idx]
+subplot(232)
+plot(sm_rho.t/second,sm_rho.rho_out[0]/Hz,'-')
+xlim([0,simtime/second])
+xlabel("")
 
 # plot final weights wm.w[syn_idx,time_idx]
 subplot(223)
@@ -356,5 +384,8 @@ title('weights along ICA components')
 
 #fig.tight_layout()
 #fig.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=0.1, hspace=0.1)
+
+figure()
+hist(wm.w[:,-1],bins=200)
 
 show()

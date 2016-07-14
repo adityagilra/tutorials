@@ -12,8 +12,8 @@ stand_alone = True
 if simulate:
     if stand_alone: set_device('cpp_standalone', build_on_run=False)
     else:
-        prefs.codegen.target = 'numpy'
-        #prefs.codegen.target = 'weave'
+        #prefs.codegen.target = 'numpy'
+        prefs.codegen.target = 'weave'
         #prefs.codegen.target = 'cython'
 
 seed(100)
@@ -151,8 +151,6 @@ SynsII.g = GII
 ###
 # probes to record
 ###
-# possible bug in PopulationRateMonitor(NrnsI) with NrnsI = NeuronGroup[N:]
-# gives higher firing rate than actual?!
 ratesI = PopulationRateMonitor(NrnsI)
 MuInh = StateMonitor(Nrns, 'u', record=range(NE,NE+5))
 

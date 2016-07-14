@@ -1,20 +1,16 @@
 #!/usr/bin/env python
 '''
 Based on:
-Zenke, Friedemann, Guillaume Hennequin, and Wulfram Gerstner.
- "Synaptic Plasticity in Neural Networks Needs Homeostasis with a Fast Rate Detector."
- PLoS Comput Biol 9, no. 11 (November 14, 2013): e1003330. doi:10.1371/journal.pcbi.1003330.
+Zenke, Friedemann, Everton J. Agnes, and Wulfram Gerstner.
+ "Diverse Synaptic Plasticity Mechanisms Orchestrated to Form and Retrieve Memories in Spiking Neural Networks."
+ Nature Communications 6 (April 21, 2015).
 
-Zenke's fast homeostasis embedded in Brunel 2000 / Ostojic 2014 network.
+Part of Zenke's rule embedded in modified Brunel 2000 / Ostojic 2014 network
 
 author: Aditya Gilra, Jun 2016.
  in Brian2rc3 for CAMP 2016.
 '''
 
-'''
-Tutorial steps:
-1.
-'''
 
 #import modules and functions to be used
 from brian2 import *    # importing brian also does:
@@ -40,7 +36,7 @@ random.seed(100)        # set seed for reproducibility of simulations
 # ###########################################
 
 simdt = 0.1*ms
-simtime = 100*second
+simtime = 10*second
 defaultclock.dt = simdt # set Brian's sim time step
 dt = simdt/second       # convert to value in seconds
 
@@ -86,142 +82,32 @@ g = 5.0             # -gJ is the inh strength. For exc-inh balance g>~f(1-f)=4
 # Network parameters: synaptic plasticity
 # ###########################################
 
-#rule_type = 'stdp'
-#rule_type = 'mlt_stdp'
-#rule_type = 'log_stdp'
-#rule_type = 'triplet_stdp'
-#rule_type = 'triplet_heteroplast'
-rule_type = 'triplet_heteroplast_trnsmtr'
-#rule_type = 'triplet_homeoplast_fastbcm'
-
 wmax = 10.              # hard bound on synaptic weight
 Apre_tau = 20*ms        # STDP Apre LTP time constant; tauplus
 Apost_tau = 20*ms       # STDP Apost LTD time constant; tauminus
 Apre0 = 1.0             # incr in Apre, on pre-spikes; Aplus for LTP
                         # at spike coincidence, delta w = -Apre0*eta
 Apost0 = 1.0            # incr in Apost on post-spikes; Aminus for LTD
-eta = 1e-1              # learning rate
+eta = 1e-2              # learning rate
 Apostslow0 = 1.0        # incr in Apostslow on post spike
 Apostslow_tau = 100*ms
 
 pre_eqns = '''Apre += Apre0
-                wsyn += -Apost*eta
-                wsyn=clip(wsyn,0,wmax)
+                wsyn += -Apost*eta*wsyn/1.
+                wsyn=clip(wsyn,0,inf)
                 v+=wsyn*J'''
-
-if rule_type == 'stdp':
-    stdp_eqns = ''' wsyn : 1
-                    dApre/dt=-Apre/Apre_tau : 1 (event-driven)
-                    dApost/dt=-Apost/Apost_tau : 1 (event-driven)'''
-    post_eqns = '''Apost += Apost0
-                    wsyn += eta*Apre
-                    wsyn=clip(wsyn,0,wmax)'''
-    def dwbydt(r):
-        return eta*(Apre0*Apre_tau/second - Apost0*Apost_tau/second)*r**2
-elif rule_type == 'mlt_stdp':
-    stdp_eqns = ''' wsyn : 1
-                    dApre/dt=-Apre/Apre_tau : 1 (event-driven)
-                    dApost/dt=-Apost/Apost_tau : 1 (event-driven)'''
-    post_eqns = '''Apost += Apost0
-                    wsyn += eta*Apre
-                    wsyn=clip(wsyn,0,wmax)'''
-    pre_eqns = '''Apre += Apre0
-                    wsyn += -Apost*eta*wsyn/1.0
-                    wsyn=clip(wsyn,0,wmax)
-                    v+=wsyn*J'''
-    def dwbydt(r):
-        return eta*(Apre0*Apre_tau/second - Apost0*Apost_tau/second)*r**2
-elif rule_type == 'log_stdp':
-    stdp_eqns = ''' wsyn : 1
-                    dApre/dt=-Apre/Apre_tau : 1 (event-driven)
-                    dApost/dt=-Apost/Apost_tau : 1 (event-driven)
-                '''
-    w0 = 1.0            # reference weight
-    beta = 50           # LTP decay factor
-    alpha = 5           # LTD curvature factor
-    pre_eqns = 'Apre+=Apre0; wsyn = clip(wsyn - Apost*log(1+wsyn/w0*alpha)/log(1+alpha), 0,inf)'
-    post_eqns = 'Apost+=Apost0; wsyn = clip(wsyn + Apre*exp(-wsyn/w0/beta), 0,inf)'
-    def dwbydt(r):
-        return eta*(Apre0*Apre_tau/second - Apost0*Apost_tau/second)*r**2
-elif rule_type == 'triplet_stdp':
-    stdp_eqns = ''' wsyn : 1
-                    dApre/dt=-Apre/Apre_tau : 1 (event-driven)
-                    dApost/dt=-Apost/Apost_tau : 1 (event-driven)
-                    dApostslow/dt=-Apostslow/Apostslow_tau : 1 (event-driven) '''
-    rate0 = 50*Hz
-    Apost0 = Apre0*Apre_tau*(1+Apostslow0*Apostslow_tau*rate0)/Apost_tau
-                        # incr in Apost on post spike for triplet rule
-    post_eqns = '''Apost += Apost0
-                    wsyn += eta*Apre*(1 + Apostslow)
-                    Apostslow+=Apostslow0
-                    wsyn=clip(wsyn,0,wmax)'''
-    def dwbydt(r):
-        return eta*(Apre0*Apre_tau/second - Apost0*Apost_tau/second)*r**2 + \
-                   eta*Apre0*Apre_tau/second * Apostslow0*Apostslow_tau/second*r**3
-elif rule_type == 'triplet_heteroplast':
-    stdp_eqns = ''' wsyn : 1
-                    dApre/dt=-Apre/Apre_tau : 1 (event-driven)
-                    dApost/dt=-Apost/Apost_tau : 1 (event-driven)
-                    dApostslow/dt=-Apostslow/Apostslow_tau : 1 (event-driven) '''
-    ratemid = 40*Hz
-    rate0 = 80*Hz
-    beta = Apostslow_tau/Apostslow0/(ratemid+rate0)
-                        # heterosynaptic plasticity strength parameter
-    Apost0 = Apre0*Apre_tau/Apost_tau*(1+beta*Apostslow0**2*ratemid*rate0)
-    post_eqns = '''Apost += Apost0
-                    wsyn += eta*Apre*(1 + Apostslow - beta*(Apostslow/Apostslow_tau)**2)
-                    Apostslow+=Apostslow0
-                    wsyn=clip(wsyn,0,wmax)'''
-    def dwbydt(r):
-        return eta*(Apre0*Apre_tau/second - Apost0*Apost_tau/second)*r**2 + \
-                   eta*Apre0*Apre_tau/second * Apostslow0*Apostslow_tau/second*r**3 -\
-                   eta*Apre0*Apre_tau/second * beta*Hz**2 * Apostslow0**2 * r**4
-elif rule_type == 'triplet_heteroplast_trnsmtr':
-    stdp_eqns = ''' wsyn : 1
-                    dApre/dt=-Apre/Apre_tau : 1 (event-driven)
-                    dApost/dt=-Apost/Apost_tau : 1 (event-driven)
-                    dApostslow/dt=-Apostslow/Apostslow_tau : 1 (event-driven) '''
-    ratemid = 50*Hz
-    rate0 = 80*Hz
-    delta = 0.3
-    beta = Apostslow_tau/Apostslow0/(ratemid+rate0)
-                        # heterosynaptic plasticity strength parameter
-    Apost0 = Apre0*Apre_tau/Apost_tau*(1+beta*Apostslow0**2*ratemid*rate0)
-    post_eqns = '''Apost += Apost0
-                    wsyn += eta*Apre*(1 + Apostslow - beta*(Apostslow/Apostslow_tau)**2)
-                    Apostslow+=Apostslow0
-                    wsyn=clip(wsyn,0,inf)'''
-    pre_eqns = '''Apre += Apre0
-                    wsyn += -Apost*eta + eta*delta
-                    wsyn=clip(wsyn,0,inf)
-                    v+=wsyn*J'''
-    def dwbydt(r):
-        return eta*(Apre0*Apre_tau/second - Apost0*Apost_tau/second)*r**2 + \
-                   eta*Apre0*Apre_tau/second * Apostslow0*Apostslow_tau/second*r**3 -\
-                   eta*Apre0*Apre_tau/second * beta*Hz**2 * Apostslow0**2 * r**4 + \
-                   eta*delta*r
-elif rule_type == 'triplet_homeoplast_fastbcm':
-    stdp_eqns = ''' wsyn : 1
-                    dApre/dt=-Apre/Apre_tau : 1 (event-driven)
-                    dApost/dt=-Apost/Apost_tau : 1 (event-driven)
-                    dApostslow/dt=-Apostslow/Apostslow_tau : 1 (event-driven)
-                    dAposthomeo/dt=-Aposthomeo/Aposthomeo_tau : 1 (event-driven) '''
-    Aposthomeo_tau = 1*second
-    post_eqns = '''Apost += Apre0*Apre_tau*(1+Apostslow0*Apostslow_tau*(Aposthomeo/Aposthomeo_tau)**2/rate0)/Apost_tau
-                    wsyn += eta*Apre*(1 - Apostslow)
-                    Apostslow+=Apostslow0
-                    wsyn=clip(wsyn,0,wmax)'''
-else:
-    print 'choose a plasticity rule'
-    sys.exit(1)
-print rule_type
+stdp_eqns = ''' wsyn : 1
+                dApre/dt=-Apre/Apre_tau : 1 (event-driven)
+                dApost/dt=-Apost/Apost_tau : 1 (event-driven)'''
+post_eqns = '''Apost += Apost0
+                wsyn += eta*Apre
+                wsyn=clip(wsyn,0,inf)'''
+def dwbydt(r):
+    return eta*(Apre0*Apre_tau/second - Apost0*Apost_tau/second)*r**2
 
 figure()
 rrange = arange(0,90,0.1)
 plot(rrange,dwbydt(rrange))
-
-#show()
-#sys.exit(0)
 
 # ###########################################
 # Initialize neuron (sub)groups
@@ -259,8 +145,6 @@ conEE_idxs_cross = where(array(conEE_idxs_post)[:Ce*400]>400)[0]
 conEE_idxs_bgnd = where(array(conEE_idxs_post)[Ce*400:]>400)[0]
 conEE.connect(i=conEE_idxs_pre,j=conEE_idxs_post)
 conEE.delay = taudelay
-# Follow Dale's law -- exc (inh) neurons only have +ve (-ve) synapses
-#  hence need to set w correctly (always set after creating connections)
 conEE.wsyn = 1.
 
 # E to I connections
@@ -330,12 +214,6 @@ print 'inittime + runtime, t = ', time.time() - t1
 spiket = array(sm.t/second) # take spiketimes of all neurons
 spikei = array(sm.i)
 
-#fig = figure()
-## Vm plots
-#timeseries = arange(0,simtime/second+dt,dt)
-#for j in range(3):
-#    plot(timeseries[:len(sm_vm.t)],sm_vm[j].v)
-
 fig = figure()
 hist(wm.wsyn[:,-1],bins=500)
 
@@ -344,17 +222,8 @@ fig = figure()
 subplot(231)
 plot(sm.t,sm.i,',')
 title(str(N)+" exc & inh neurons")
-xlim([0,simtime/second])
+xlim([simtime/second-1,simtime/second])
 xlabel("")
-
-## CV histogram
-#subplot(234)
-#CVarray = CV_spiketrains(spiket,spikei,0.3,range(NE))
-#print 'CV distribution: mean, min, and max =',\
-#            mean(CVarray),min(CVarray),max(CVarray)
-#hist(CVarray,bins=100) # from 0.3s on
-#xlabel('CV of ISI distribution')
-#ylabel('# of neurons')
 
 print "plotting firing rates"
 subplot(232)
@@ -386,24 +255,12 @@ ylim(0,300)
 xlabel("time (s)")
 ylabel("Hz")
 
-#print "plotting pop firing rates"
-## Population firing rates
-#subplot(233)
-#timeseries = arange(0,simtime/second,dt)
-#plot(popm.t/second,popm.smooth_rate(width=50.*ms,window="gaussian")/Hz,
-                            #color='grey')
-#rate = rate_from_spiketrain(spiket,spikei,simtime/second,sigma,dt)/float(N)
-#plot(timeseries[:len(rate)],rate)
-#title("population rate")
-#ylabel("Hz")
-#xlabel("time (s)")
-
 print "plotting weights"
 subplot(236)
 plot(wm.t/second,mean(wm.wsyn[conEE_idxs_assembly,:],axis=0),color='r')
 plot(wm.t/second,mean(wm.wsyn[conEE_idxs_cross,:],axis=0),color='m')
 plot(wm.t/second,mean(wm.wsyn[conEE_idxs_bgnd,:],axis=0),color='b')
-title("assembly weights")
+title("assembly weights (cross=m)")
 ylabel("arb")
 xlabel("time (s)")
 

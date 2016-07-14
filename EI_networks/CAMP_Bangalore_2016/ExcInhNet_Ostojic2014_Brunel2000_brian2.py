@@ -25,12 +25,12 @@ from brian2 import *    # importing brian also does:
                         # also can use np. for numpy and mpl. for matplotlib
 from data_utils import *
 
-stand_alone = True
+stand_alone = False#True
 if stand_alone: set_device('cpp_standalone', build_on_run=False)
 else:
     #prefs.codegen.target = 'numpy'
-    #prefs.codegen.target = 'weave'
-    prefs.codegen.target = 'cython'
+    prefs.codegen.target = 'weave'
+    #prefs.codegen.target = 'cython'
 import random
 import time
 

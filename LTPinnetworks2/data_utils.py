@@ -34,7 +34,7 @@ def rate_from_spiketrain(spiket,spikei,fulltime,sigma,dt,nrnidx=None):
     return rate_full[kernel_len/2:kernel_len/2+int(fulltime/dt)]
 
 def CV_spiketrains(spiket,spikei,tinit,nrnidxs):
-    """ calculate CV of neurons
+    """ calculate CV of excitatory neurons
      a la Lim and Goldman 2013 """
     CV = []
     for j in nrnidxs:
